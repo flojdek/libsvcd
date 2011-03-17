@@ -74,7 +74,7 @@ void NodesSearch::Search()
 
 		THROW_IF_ERROR(
 				sendto(sockfd, m_payload.data(), m_payload.size(), 0, 
-					reinterpret_cast<struct sockaddr*>(&broadcast_addr), sizeof(struct sockaddr_in)),
+					reinterpret_cast<struct sockaddr*>(&broadcast_addr), sizeof(broadcast_addr)),
 					"Can't send message");
 
 		alarm(m_retry_timeout);
