@@ -117,10 +117,7 @@ void NodesSearch::Search()
 				{
 					char addr_buff[MAX_ADDRESS_SIZE] = {0};
 					if (inet_ntop(AF_INET, &node_addr.sin_addr, addr_buff, sizeof(addr_buff)) != 0)
-					{
-						Node node(addr_buff, msg_buff);
-						nodes_just_found.insert(node);
-					}
+						nodes_just_found.insert(Node(addr_buff, msg_buff));
 				}
 
 				delete [] msg_buff;
