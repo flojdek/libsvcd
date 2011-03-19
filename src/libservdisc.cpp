@@ -30,13 +30,13 @@ namespace
 }
 
 NodesSearch::NodesSearch() :
-		m_payload(""),
-		m_port(DEFAULT_SEARCH_PORT),
-		m_max_retries(DEFAULT_MAX_RETRIES),
-		m_retry_timeout(DEFAULT_RETRY_TIMEOUT),
-		m_min_retry_interval(DEFAULT_MIN_RETRY_INTERVAL),
-		m_max_retry_interval(DEFAULT_MAX_RETRY_INTERVAL),
-		m_max_message_size(DEFAULT_MAX_MESSAGE_SIZE)
+	m_payload(""),
+	m_port(DEFAULT_SEARCH_PORT),
+	m_max_retries(DEFAULT_MAX_RETRIES),
+	m_retry_timeout(DEFAULT_RETRY_TIMEOUT),
+	m_min_retry_interval(DEFAULT_MIN_RETRY_INTERVAL),
+	m_max_retry_interval(DEFAULT_MAX_RETRY_INTERVAL),
+	m_max_message_size(DEFAULT_MAX_MESSAGE_SIZE)
 {
 	m_opts_desc.add_options()
 		("Discovery.Port", po::value<unsigned>(&m_port))
