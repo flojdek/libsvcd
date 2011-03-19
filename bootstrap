@@ -2,6 +2,7 @@
 
 aclocal -Wall \
 && automake --add-missing \
-&& autoconf
+&& autoconf \
+&& ./configure
 
 make clean; make
