@@ -129,6 +129,10 @@ private:
 	unsigned m_max_retry_interval;
 	unsigned m_max_message_size;
 
+	/**
+	 * Auxiliary call for NodesSearch::Search.
+	 * @see NodesSearch::Search
+	 */
 	void SearchAux();
 
 	unsigned GetNextRetrySleepInterval() const;
