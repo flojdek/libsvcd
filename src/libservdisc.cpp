@@ -12,9 +12,19 @@
 #include <iostream>
 #include <algorithm>
 #include <set>
+#include <stdexcept>
+
+#define QUOTEME(x) #x
+#define QUOTEME2(x) QUOTEME(x)
+#define THROW(ex, msg) (throw ex(__FILE__ ":" QUOTEME2(__LINE__) ": " msg))
+#define THROW_IF_ERROR(ret, ex, msg) if ((ret) < 0) { THROW(ex, msg); }
+#define THROW_IF_TRUE(ret, ex, msg) if (ret) { THROW(ex, msg); }
 
 namespace
 {
+	typedef struct sockaddr SA;
+	typedef struct sockaddr_in SA_IN;
+
 	int pipefd[2];
 	void AlarmHandler(int signo) { write(pipefd[1], "", 1); } 
 }
@@ -36,46 +46,53 @@ NodesSearch::NodesSearch() :
 		("Discovery.MaxRetryInterval", po::value<unsigned>(&m_max_retry_interval));
 }
 
-void NodesSearch::Search()
+void NodesSearch::SearchAux()
 {
 	NotifyAllOnSearchStarted();
 
 	int sockfd = socket(AF_INET, SOCK_DGRAM, 0);
-	THROW_IF_ERROR(sockfd, "Can't create socket");
+	THROW_IF_ERROR(sockfd, std::runtime_exception, "can't create socket");
 
 	const int value = 1; 
-	THROW_IF_ERROR(setsockopt(sockfd, SOL_SOCKET, SO_BROADCAST, &value, sizeof(value)),
-			"Can't set option SO_BROADCAST on socket");
-	THROW_IF_ERROR(setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &value, sizeof(value)),
-			"Can't set option SO_REUSEADDR on socket");
+	int ret = setsockopt(sockfd, SOL_SOCKET, SO_BROADCAST, &value, sizeof(value));
+	THROW_IF_ERROR(ret, std::runtime_exception, "can't set option SO_BROADCAST on socket");
+	ret = setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &value, sizeof(value));
+	THROW_IF_ERROR(ret, std::runtime_exception, "can't set option SO_REUSEADDR on socket");
 
-	struct sockaddr_in broadcast_addr;
+	SA_IN broadcast_addr;
 	memset(&broadcast_addr, 0, sizeof(broadcast_addr));
 	broadcast_addr.sin_family = AF_INET;
 	broadcast_addr.sin_port = htons(m_port);
 	broadcast_addr.sin_addr.s_addr = htonl(INADDR_BROADCAST);
 
-	THROW_IF_ERROR(pipe(pipefd), "Can't create pipe");
+	ret = pipe(pipefd); 
+	THROW_IF_ERROR(ret, std::runtime_exception, "can't create pipe");
 
 	void (*pf_ret)(int);
 	pf_ret = signal(SIGALRM, AlarmHandler);
-	THROW_IF_TRUE(pf_ret == SIG_ERR, "Can't set SIGALRM handler");
+	THROW_IF_TRUE(pf_ret == SIG_ERR, std::runtime_exception, "can't set SIGALRM handler");
 
 	// We'll be pushing difference of nodes_just_found and nodes_all
 	// to the listeners via OnSearchPushNodes.
 
 	std::set<Node> nodes_all;
 	std::set<Node> nodes_just_found;
+	std::vector<Node: nodes_diff;
 
 	for (int i = 0; i < m_max_retries; ++i)
 	{
-		if (i > 0)
-			sleep(rand() % (m_max_retry_interval - m_min_retry_interval + 1) + m_min_retry_interval);
+		nodes_just_found.clear();
+		nodes_diff.clear();
 
-		THROW_IF_ERROR(
-				sendto(sockfd, m_payload.data(), m_payload.size(), 0, 
-					reinterpret_cast<struct sockaddr*>(&broadcast_addr), sizeof(broadcast_addr)),
-					"Can't send message");
+		if (i > 0)
+			sleep(GetNextRetrySleepInterval());
+
+		// If sendto will return an error we try again after some time interval.
+
+		int ret = sendto(sockfd, m_payload.data(), m_payload.size(), 0, 
+			reinterpret_cast<SA*>(&broadcast_addr), sizeof(broadcast_addr));
+		if (ret < 0)
+			continue;
 
 		alarm(m_retry_timeout);
 
@@ -95,24 +112,22 @@ void NodesSearch::Search()
 				if (errno == EINTR)
 					continue;
 
-				THROW_IF_TRUE(errno != EINTR, "select error");
+				THROW_IF_TRUE(errno != EINTR, std::runtime_exception, "select error");
 			}
 
 			THROW_IF_TRUE(FD_ISSET(sockfd, &errorfds) || FD_ISSET(pipefd[0], &errorfds),
-					"Error condition occured on socket or pipe");
+				"error condition occured on socket or pipe");
 
 			if (FD_ISSET(sockfd, &readfds))
 			{
-				struct sockaddr_in node_addr;
+				SA_IN node_addr;
 				socklen_t length = sizeof(node_addr);
 
 				char* msg_buff = new char [m_max_message_size];
 				memset(msg_buff, 0, m_max_message_size);
 
-				// Receive message from peer and remember its address.
-
 				int ret = recvfrom(sockfd, msg_buff, m_max_message_size - 1, 0, 
-						reinterpret_cast<struct sockaddr*>(&node_addr), &length);
+					reinterpret_cast<SA*>(&node_addr), &length);
 				if (ret >= 0)
 				{
 					char addr_buff[MAX_ADDRESS_SIZE] = {0};
@@ -125,23 +140,20 @@ void NodesSearch::Search()
 
 			if (FD_ISSET(pipefd[0], &readfds))
 			{
-				THROW_IF_ERROR(read(pipefd[0], &ret, 1), "Can't read from pipe");
+				ret = read(pipefd[0], &ret, 1); 
+				THROW_IF_ERROR(ret, std::runtime_exception, "can't read from pipe");
 				break;
 			}
 		}
 
 		// Remove duplicates, push to listeners if new nodes were found.
 
-		std::vector<Node> nodes_diff;
 		std::set_difference(nodes_just_found.begin(), nodes_just_found.end(),
-				nodes_all.begin(), nodes_all.end(), std::inserter(nodes_diff, nodes_diff.end()));
+			nodes_all.begin(), nodes_all.end(), std::inserter(nodes_diff, nodes_diff.end()));
 		for (int i = 0; i < nodes_diff.size(); ++i)
 			nodes_all.insert(nodes_diff[i]);
 
 		NotifyAllOnSearchPushNodes(nodes_diff);
-
-		nodes_just_found.clear();
-		nodes_diff.clear();
 	}
 
 	NotifyAllOnSearchFinished();
@@ -150,10 +162,16 @@ void NodesSearch::Search()
 void NodesSearch::ReadConfigFile(const char* path)
 {
 	std::ifstream cfg_file_path(path);
-	THROW_IF_TRUE(cfg_file_path.fail(), "In/Out problem with config file");
+	THROW_IF_TRUE(cfg_file_path.fail(), "in/out problem with config file");
 	po::variables_map vm;
 	po::store(po::parse_config_file(cfg_file_path, m_opts_desc), vm);
 	po::notify(vm);
+}
+
+unsigned NodesSearch::GetNextRetrySleepInterval()
+{
+	return rand() % (m_max_retry_interval - m_min_retry_interval + 1) + 
+		m_min_retry_interval;
 }
 
 void NodesSearch::NotifyAllOnSearchStarted()

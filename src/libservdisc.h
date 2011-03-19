@@ -4,7 +4,6 @@
 #include <list>
 #include <vector>
 #include <string>
-#include <stdexcept>
 
 #include <boost/program_options.hpp>
 
@@ -89,25 +88,25 @@ public:
 	void ReadConfigFile(const char* path);
 
 	void SetPayload(const char* payload) { m_payload = payload; }
-	const char* GetPayload() { return m_payload.c_str(); }
+	const char* GetPayload() const { return m_payload.c_str(); }
 
 	void SetPort(unsigned port) { m_port = port; }
-	unsigned GetPort() { return m_port; }
+	unsigned GetPort() const { return m_port; }
 
 	void SetMaxRetries(unsigned max) { m_max_retries = max; }
-	unsigned GetMaxRetries() { return m_max_retries; }
+	unsigned GetMaxRetries() const { return m_max_retries; }
 
 	void SetRetryTimeout(unsigned sec) { m_retry_timeout = sec; }
-	unsigned GetRetryTimeout() { return m_retry_timeout; }
+	unsigned GetRetryTimeout() const { return m_retry_timeout; }
 
 	void SetMaxRetryInterval(unsigned sec) { m_max_retry_interval = sec; }
-	unsigned GetMaxRetryInterval() { return m_max_retry_interval; }
+	unsigned GetMaxRetryInterval() const { return m_max_retry_interval; }
 
 	void SetMinRetryInterval(unsigned sec) { m_min_retry_interval = sec; }
-	unsigned GetMinRetryInterval() { return m_min_retry_interval; }
+	unsigned GetMinRetryInterval() const { return m_min_retry_interval; }
 
 	void SetMaxMessageSize(unsigned size) { m_max_message_size = size; }
-	unsigned GetMaxMessageSize() { return m_max_message_size; }
+	unsigned GetMaxMessageSize() const { return m_max_message_size; }
 
 private:
 
@@ -130,11 +129,9 @@ private:
 	unsigned m_max_retry_interval;
 	unsigned m_max_message_size;
 
-	void THROW_IF_TRUE(bool ret, const std::string& msg) { if (ret) ERROR(msg); }
-	void THROW_IF_FALSE(bool ret, const std::string& msg) { if (!ret) ERROR(msg); }
-	void THROW_IF_ERROR(int ret, const std::string& msg) { if (ret < 0) ERROR(msg); }
-	void ERROR(const std::string& msg) { NotifyAllOnSearchError(); throw std::runtime_error(msg); }
+	void SearchAux();
 
+	unsigned GetNextRetrySleepInterval() const;
 	void NotifyAllOnSearchStarted();
 	void NotifyAllOnSearchFinished();
 	void NotifyAllOnSearchPushNodes(const std::vector<Node>& nodes);
