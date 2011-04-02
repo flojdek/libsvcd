@@ -78,6 +78,8 @@ public:
 	/**
 	 * Start searching nodes. Notifications will be send
 	 * to listeners during the call.
+	 *
+	 * @throws std::runtime_error
 	 */
 	void Search();
 
@@ -87,9 +89,13 @@ public:
 	 * options from configuration file override defaults.
 	 *
 	 * @param path Path to configuration file.
+	 * @throws std::runtime_error
 	 */
 	void ReadConfigFile(const char* path);
 
+	/**
+	 * @throws std::length_error
+	 */
 	void SetPayload(const char* payload);
 	const char* GetPayload() const { return m_payload.c_str(); }
 
@@ -134,6 +140,8 @@ private:
 
 	/**
 	 * Auxiliary call for NodesSearch::Search.
+	 *
+	 * @throws std::runtime_error
 	 * @see NodesSearch::Search
 	 */
 	void SearchAux();
