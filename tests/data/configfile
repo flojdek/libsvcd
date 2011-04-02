@@ -1,0 +1,6 @@
+[Discovery]
+Port = 8000
+MaxRetries = 4
+RetryTimeout = 6
+MinRetryInterval = 1
+MaxRetryInterval = 2
