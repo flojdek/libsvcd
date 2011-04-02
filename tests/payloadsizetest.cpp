@@ -38,5 +38,7 @@ int main()
 		assert(false);
 	}
 
+	assert(std::string(nodes_finder.GetPayload()) != "");
+
 	return 0;
 }
