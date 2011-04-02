@@ -22,6 +22,9 @@ class NodesSearch
 {
 public:
 
+	typedef struct sockaddr SA;
+	typedef struct sockaddr_in SA_IN;
+
 	struct Node
 	{
 		/**
@@ -87,7 +90,7 @@ public:
 	 */
 	void ReadConfigFile(const char* path);
 
-	void SetPayload(const char* payload) { m_payload = payload; }
+	void SetPayload(const char* payload);
 	const char* GetPayload() const { return m_payload.c_str(); }
 
 	void SetPort(unsigned port) { m_port = port; }

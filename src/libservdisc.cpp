@@ -22,9 +22,6 @@
 
 namespace
 {
-	typedef struct sockaddr SA;
-	typedef struct sockaddr_in SA_IN;
-
 	int pipefd[2];
 	void AlarmHandler(int signo) { write(pipefd[1], "", 1); } 
 }
@@ -175,10 +172,18 @@ void NodesSearch::SearchAux()
 void NodesSearch::ReadConfigFile(const char* path)
 {
 	std::ifstream cfg_file_path(path);
-	THROW_IF_TRUE(cfg_file_path.fail(), std::runtime_error, "in/out problem with config file");
+	THROW_IF_TRUE(cfg_file_path.fail(), std::runtime_error, "i/o error with config file");
 	po::variables_map vm;
 	po::store(po::parse_config_file(cfg_file_path, m_opts_desc), vm);
 	po::notify(vm);
+}
+
+void NodesSearch::SetPayload(const char* payload)
+{
+	if (strlen(payload) > m_max_message_size)
+		THROW(std::length_error, "payload length exceeds maximum allowable size");	
+	
+	m_payload = payload;
 }
 
 unsigned NodesSearch::GetNextRetrySleepInterval() const
