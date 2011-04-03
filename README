@@ -1,10 +1,15 @@
-1. How to start?
+Services discovery library
+==========================
 
-./bootstrap
+Simple event based library for discovering appropriately configured network nodes
+using UDP broadcasting.
 
-Some additional dev libraries may be needed.
+Developer libraries needed
+==========================
 
-2. Todo.
+* libboost-program-options-dev
 
-- Add tests.
-- Needed dev libraries.
+How to start
+============
+
+$ ./bootstrap
