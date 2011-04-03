@@ -1,6 +1,6 @@
 #!/bin/sh
 
-aclocal -Wall \
+aclocal -I./config/m4 -Wall \
 && automake --add-missing \
 && autoconf \
 && ./configure
