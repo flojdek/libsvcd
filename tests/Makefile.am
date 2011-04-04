@@ -12,3 +12,5 @@ payloadsizetest_CPPFLAGS = -I$(top_srcdir)/src
 initialsetuptest_SOURCES = initialsetuptest.cpp
 initialsetuptest_LDADD = $(top_srcdir)/src/libservdisc.la
 initialsetuptest_CPPFLAGS = -I$(top_srcdir)/src
+
+EXTRA_DIST = ./data/configfile
