@@ -20,12 +20,6 @@
 #define THROW_IF_ERROR(ret, ex, msg) if ((ret) < 0) { THROW(ex, msg); }
 #define THROW_IF_TRUE(ret, ex, msg) if (ret) { THROW(ex, msg); }
 
-namespace
-{
-	int pipefd[2];
-	void AlarmHandler(int signo) { write(pipefd[1], "", 1); } 
-}
-
 NodesSearch::NodesSearch() :
 	m_payload(""),
 	m_port(DEFAULT_SEARCH_PORT),
@@ -75,13 +69,6 @@ void NodesSearch::SearchAux()
 	broadcast_addr.sin_port = htons(m_port);
 	broadcast_addr.sin_addr.s_addr = htonl(INADDR_BROADCAST);
 
-	ret = pipe(pipefd); 
-	THROW_IF_ERROR(ret, std::runtime_error, "can't create pipe");
-
-	void (*pf_ret)(int);
-	pf_ret = signal(SIGALRM, AlarmHandler);
-	THROW_IF_TRUE(pf_ret == SIG_ERR, std::runtime_error, "can't set SIGALRM handler");
-
 	// We'll be pushing difference of nodes_just_found and nodes_all
 	// to the listeners via OnSearchPushNodes.
 
@@ -104,7 +91,9 @@ void NodesSearch::SearchAux()
 		if (ret < 0)
 			continue;
 
-		alarm(m_retry_timeout);
+		timeval tv;
+		tv.tv_sec = m_retry_timeout;
+		tv.tv_usec = 0;
 
 		fd_set readfds, errorfds;
 		for (;;)
@@ -113,11 +102,17 @@ void NodesSearch::SearchAux()
 			FD_ZERO(&errorfds);
 			FD_SET(sockfd, &readfds);
 			FD_SET(sockfd, &errorfds);
-			FD_SET(pipefd[0], &readfds);
-			FD_SET(pipefd[0], &errorfds);
 
-			int ret = select(std::max(sockfd, pipefd[0]) + 1, &readfds, 0, &errorfds, 0);
-			if (ret < 0)
+			// FIXME: select() manual says "Consider timeout to be undefined after select() returns.",
+			// but Linux modifies timeout to reflect the amount of time not slept. Anyway this needs
+			// to be done in a more portable fashion as soon as I'll know how to do it better.
+
+			int ret = select(sockfd + 1, &readfds, 0, &errorfds, &tv);
+			if (ret == 0)
+			{
+				break;
+			}
+			else if (ret < 0)
 			{
 				if (errno == EINTR)
 					continue;
@@ -125,8 +120,7 @@ void NodesSearch::SearchAux()
 				THROW_IF_TRUE(errno != EINTR, std::runtime_error, "select error");
 			}
 
-			THROW_IF_TRUE(FD_ISSET(sockfd, &errorfds) || FD_ISSET(pipefd[0], &errorfds),
-				std::runtime_error, "error condition occured on socket or pipe");
+			THROW_IF_TRUE(FD_ISSET(sockfd, &errorfds), std::runtime_error, "error condition occured on socket");
 
 			if (FD_ISSET(sockfd, &readfds))
 			{
@@ -146,13 +140,6 @@ void NodesSearch::SearchAux()
 				}
 
 				delete [] msg_buff;
-			}
-
-			if (FD_ISSET(pipefd[0], &readfds))
-			{
-				ret = read(pipefd[0], &ret, 1); 
-				THROW_IF_ERROR(ret, std::runtime_error, "can't read from pipe");
-				break;
 			}
 		}
 

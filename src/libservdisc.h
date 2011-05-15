@@ -10,6 +10,40 @@
 namespace po = boost::program_options;
 
 /**
+ * Network node representation.
+ */
+struct Node
+{
+	/**
+	 * Represents found node in network.
+	 *
+	 * @param ip IP address of the found node.
+	 * @param msg Message with which the node replied.
+	 */
+	Node() : m_ip_addr(""), m_reply_msg("") {}
+	Node(const char* ip) : m_ip_addr(ip), m_reply_msg("") {}
+	Node(const char* ip, const char* msg) : m_ip_addr(ip), m_reply_msg(msg) {}
+
+	/**
+	 * Needed for storing Nodes in std::set.
+	 */
+	bool operator<(const Node& rhs) const { return m_ip_addr < rhs.m_ip_addr; }
+
+	/**
+	 * @return TRUE iff is bound to some network address.
+	 */
+	bool HasAddress() { return m_ip_addr != ""; }
+
+	/**
+	 * @return node's ip address.
+	 */
+	const char* Address() { return m_ip_addr.c_str(); }
+
+	std::string m_ip_addr;
+	std::string m_reply_msg;
+};
+
+/**
  * @brief Nodes discovery in local network.
  *
  * NodesSearch does UDP broadcasting to discover nodes on local network.
@@ -24,25 +58,6 @@ public:
 
 	typedef struct sockaddr SA;
 	typedef struct sockaddr_in SA_IN;
-
-	struct Node
-	{
-		/**
-		 * Represents found node in network.
-		 *
-		 * @param ip IP address of the found node.
-		 * @param msg Message with which the node replied.
-		 */
-		Node(const char* ip, const char* msg) : m_ip_addr(ip), m_reply_msg(msg) {}
-
-		/**
-		 * Needed for storing Nodes in std::set.
-		 */
-		bool operator<(const Node& rhs) const { return m_ip_addr < rhs.m_ip_addr; }
-
-		std::string m_ip_addr;
-		std::string m_reply_msg;
-	};
 
 	struct Listener
 	{
@@ -122,9 +137,9 @@ private:
 	static const unsigned DEFAULT_MAX_MESSAGE_SIZE = 1000;
 	static const unsigned DEFAULT_SEARCH_PORT = 6666;
 	static const unsigned DEFAULT_MAX_RETRIES = 3;
-	static const unsigned DEFAULT_MAX_RETRY_INTERVAL = 5;
+	static const unsigned DEFAULT_MAX_RETRY_INTERVAL = 2;
 	static const unsigned DEFAULT_MIN_RETRY_INTERVAL = 1;
-	static const unsigned DEFAULT_RETRY_TIMEOUT = 5;
+	static const unsigned DEFAULT_RETRY_TIMEOUT = 3;
 	static const unsigned MAX_ADDRESS_SIZE = 128;
 	
 	std::list<Listener*> m_listeners;

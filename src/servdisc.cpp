@@ -14,7 +14,7 @@ class NodesListener : public NodesSearch::Listener
 		std::cout << "Nodes search finished.\n";
 	}
 
-	virtual void OnSearchPushNodes(const std::vector<NodesSearch::Node>& nodes)
+	virtual void OnSearchPushNodes(const std::vector<Node>& nodes)
 	{
 		for (int i = 0; i < nodes.size(); ++i)
 			std::cout << "Found " << nodes[i].m_ip_addr << ".\n";
