@@ -1,44 +1,42 @@
-#include "libservdisc.h"
+#include "svcd_nodesfinder.h"
 
 #include <cassert>
 
 int main()
 {
-	NodesSearch nodes_finder;
+    svcd::NodesFinder finder;
 
-	// Too big payload.
+    // Too big payload.
 
-	char* payload = new (std::nothrow) char [nodes_finder.GetMaxMessageSize() + 1];
-	assert(payload);
-	memset(payload, 1, nodes_finder.GetMaxMessageSize() + 1);
+    char* payload = new (std::nothrow) char [finder.GetMaxMessageSize() + 1];
+    assert(payload);
+    memset(payload, 1, finder.GetMaxMessageSize() + 1);
 
-	bool was_exception = false;
-	try
-	{
-		nodes_finder.SetPayload(payload);
-	}
-	catch (std::length_error& ex)
-	{
-		was_exception = true;
-	}
-	assert(was_exception);
+    bool was_exception = false;
+    try
+    {
+        finder.SetPayload(payload);
+    }
+    catch (std::length_error& ex)
+    {
+        was_exception = true;
+    }
+    assert(was_exception);
 
-	assert(std::string(nodes_finder.GetPayload()) == "");
+    assert(std::string(finder.GetPayload()) == "");
 
-	// Exact payload.
+    // Exact payload.
 
-	payload[nodes_finder.GetMaxMessageSize()] = 0;
+    payload[finder.GetMaxMessageSize()] = 0;
 
-	try
-	{
-		nodes_finder.SetPayload(payload);
-	}
-	catch (std::length_error& ex)
-	{
-		assert(false);
-	}
+    try
+    {
+        finder.SetPayload(payload);
+    }
+    catch (std::length_error& ex)
+    {
+        assert(false);
+    }
 
-	assert(std::string(nodes_finder.GetPayload()) != "");
-
-	return 0;
+    return 0;
 }
