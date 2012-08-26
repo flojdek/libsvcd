@@ -18,10 +18,10 @@
 
 namespace
 {
-    template <typename T>
-    void zero(T* x)
+    template <typename L, typename N>
+    void Notify(L listeners, N notification)
     {
-        memset(x, 0, sizeof(T));
+        std::for_each(listeners.begin(), listeners.end(), notification);
     }
 }
 
@@ -53,12 +53,12 @@ void NodesFinder::Search()
     }
     catch (std::exception& ex)
     {
-        //NotifyAllOnSearchError();
+        NotifyAllOnSearchError(ex.what());
         throw ex;
     }
 }
 
-std::string NodesFinder::BuildError(const std::string& prefix)
+std::string NodesFinder::ErrorMsg(const std::string& prefix)
 {
     std::ostringstream err;
     err << prefix << " error: " << strerror(errno);
@@ -67,50 +67,36 @@ std::string NodesFinder::BuildError(const std::string& prefix)
 
 void NodesFinder::SearchAux()
 {
-    NotifyAllOnSearchStarted();
-
     int sockfd = socket(AF_INET, SOCK_DGRAM, 0);
     if (sockfd < 0)
     {
-        /*
-        throw std::runtime_error(NotifyAllOnSearchError(
-                                                       BuildError("socket()")));
-        */
+        throw std::runtime_error(ErrorMsg("socket()"));
     }
 
     int opt = 1;
     int ret = setsockopt(sockfd, SOL_SOCKET, SO_BROADCAST, &opt, sizeof(opt));
     if (ret < 0)
     {
-        /*
-        std::string err = BuildError("setsockopt(SOL_SOCKET, SO_BROADCAST)");
-        NotifyAllOnSearchError(err);
-        throw std::runtime_error(err);
-        */
+        throw std::runtime_error(ErrorMsg("setsockopt(SO_BROADCAST)"));
     }
 
     opt = 1;
     ret = setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
     if (ret < 0)
     {
-        std::string err = BuildError("setsockopt(SOL_SOCKET, SO_REUSEADDR)");
-        NotifyAllOnSearchError(err);
-        throw std::runtime_error(err);
+        throw std::runtime_error(ErrorMsg("setsockopt(SO_REUSEADDR)"));
     }
 
-    sockaddr_in broadcast_addr;
-    zero(&broadcast_addr);
-
+    sockaddr_in broadcast_addr     = {0};
     broadcast_addr.sin_family      = AF_INET;
     broadcast_addr.sin_port        = htons(m_port);
     broadcast_addr.sin_addr.s_addr = htonl(INADDR_BROADCAST);
 
-    // We'll be pushing difference of nodes_just_found and nodes_all
-    // to the listeners via OnSearchPushNodes.
-
     std::set<Node> nodes_all;
     std::set<Node> nodes_just_found;
     std::vector<Node> nodes_diff;
+
+    NotifyAllOnSearchStarted();
 
     for (int i = 0; i < m_max_retries; ++i)
     {
@@ -133,9 +119,7 @@ void NodesFinder::SearchAux()
             continue;
         }
 
-        timeval tv;
-        zero(&tv);
-
+        timeval tv = {0};
         tv.tv_sec  = m_retry_timeout;
         tv.tv_usec = 0;
 
@@ -160,7 +144,7 @@ void NodesFinder::SearchAux()
                 }
                 else
                 {
-                    throw std::runtime_error(BuildError("select()"));
+                    throw std::runtime_error(ErrorMsg("select()"));
                 }
             }
 
@@ -173,27 +157,20 @@ void NodesFinder::SearchAux()
             {
                 boost::scoped_array<char> msg_buffer(
                                                 new char [m_max_message_size]);
-                zero(msg_buffer.get());
+                memset(msg_buffer.get(), 0, m_max_message_size);
 
-                sockaddr_in node_addr;
-                zero(&node_addr);
+                sockaddr_in node_addr = {0};
+                socklen_t length      = sizeof(node_addr);
 
-                socklen_t length = sizeof(node_addr);
                 ret = recvfrom(sockfd,
                                msg_buffer.get(),
                                m_max_message_size - 1,
                                0,
                                reinterpret_cast<sockaddr*>(&node_addr),
                                &length);
-                if (ret < 0)
+                if (ret == 0 || ret > 0)
                 {
-                    // FIXME: Log warning.
-                }
-                else
-                {
-                    char addr_buffer[MAX_ADDRESS_SIZE];
-                    zero(addr_buffer);
-
+                    char addr_buffer[MAX_ADDRESS_SIZE] = {0};
                     const char* ret = inet_ntop(AF_INET,
                                                 &node_addr.sin_addr,
                                                 addr_buffer,
@@ -207,12 +184,15 @@ void NodesFinder::SearchAux()
             }
         }
 
-        // Remove duplicates, push to listeners if new nodes were found.
-
-        std::set_difference(nodes_just_found.begin(), nodes_just_found.end(),
-            nodes_all.begin(), nodes_all.end(), std::inserter(nodes_diff, nodes_diff.end()));
+        std::set_difference(nodes_just_found.begin(),
+                            nodes_just_found.end(),
+                            nodes_all.begin(),
+                            nodes_all.end(),
+                            std::inserter(nodes_diff, nodes_diff.end()));
         for (int i = 0; i < nodes_diff.size(); ++i)
+        {
             nodes_all.insert(nodes_diff[i]);
+        }
 
         NotifyAllOnSearchPushNodes(nodes_diff);
     }
@@ -250,32 +230,25 @@ unsigned NodesFinder::GetNextRetrySleepInterval() const
 
 void NodesFinder::NotifyAllOnSearchStarted()
 {
-    std::for_each(m_listeners.begin(),
-                  m_listeners.end(),
-                  std::mem_fun(&Listener::OnSearchStarted));
+    Notify(m_listeners, std::mem_fun(&Listener::OnSearchStarted));
 }
 
 void NodesFinder::NotifyAllOnSearchFinished()
 {
-    std::for_each(m_listeners.begin(),
-                  m_listeners.end(),
-                  std::mem_fun(&Listener::OnSearchFinished));
+    Notify(m_listeners, std::mem_fun(&Listener::OnSearchFinished));
 }
 
 void NodesFinder::NotifyAllOnSearchPushNodes(const std::vector<Node>& nodes)
 {
-    std::for_each(m_listeners.begin(),
-                  m_listeners.end(),
-                  std::bind2nd(std::mem_fun(&Listener::OnSearchPushNodes),
-                               nodes));
+    Notify(m_listeners,
+           std::bind2nd(std::mem_fun(&Listener::OnSearchPushNodes), nodes));
 }
 
-void NodesFinder::NotifyAllOnSearchError(const std::string& what)
+std::string NodesFinder::NotifyAllOnSearchError(const std::string& what)
 {
-    std::for_each(m_listeners.begin(),
-                  m_listeners.end(),
-                  std::bind2nd(std::mem_fun(&Listener::OnSearchError),
-                               what));
+    Notify(m_listeners,
+           std::bind2nd(std::mem_fun(&Listener::OnSearchError), what));
+    return what;
 }
 
 }

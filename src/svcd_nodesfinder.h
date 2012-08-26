@@ -131,13 +131,13 @@ private:
      */
     void SearchAux();
 
-    std::string BuildError(const std::string& prefix);
+    std::string ErrorMsg(const std::string& prefix);
 
     unsigned GetNextRetrySleepInterval() const;
     void NotifyAllOnSearchStarted();
     void NotifyAllOnSearchFinished();
     void NotifyAllOnSearchPushNodes(const std::vector<Node>& nodes);
-    void NotifyAllOnSearchError(const std::string& what);
+    std::string NotifyAllOnSearchError(const std::string& what);
 };
 
 }
