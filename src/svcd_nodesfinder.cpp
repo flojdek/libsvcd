@@ -23,6 +23,16 @@ namespace
     {
         std::for_each(listeners.begin(), listeners.end(), notification);
     }
+
+    template <typename N>
+    std::vector<N> Difference(const std::set<N>& lhs, const std::set<N>& rhs)
+    {
+        std::vector<N> diff;
+        std::set_difference(lhs.begin(), lhs.end(),
+                            rhs.begin(), rhs.end(),
+                            std::inserter(diff, diff.end()));
+        return diff;
+    }
 }
 
 namespace svcd
@@ -93,15 +103,13 @@ void NodesFinder::SearchAux()
     broadcast_addr.sin_addr.s_addr = htonl(INADDR_BROADCAST);
 
     std::set<Node> nodes_all;
-    std::set<Node> nodes_just_found;
-    std::vector<Node> nodes_diff;
+    std::set<Node> nodes_fnd;
 
     NotifyAllOnSearchStarted();
 
     for (int i = 0; i < m_max_retries; ++i)
     {
-        nodes_just_found.clear();
-        nodes_diff.clear();
+        nodes_fnd.clear();
 
         if (i > 0)
         {
@@ -132,11 +140,7 @@ void NodesFinder::SearchAux()
             FD_SET(sockfd, &errorfds);
 
             ret = select(sockfd + 1, &readfds, 0, &errorfds, &tv);
-            if (ret == 0)
-            {
-                break;
-            }
-            else if (ret < 0)
+            if (ret < 0)
             {
                 if (errno == EINTR)
                 {
@@ -147,13 +151,16 @@ void NodesFinder::SearchAux()
                     throw std::runtime_error(ErrorMsg("select()"));
                 }
             }
+            else if (ret == 0)
+            {
+                break;
+            }
 
             if (FD_ISSET(sockfd, &errorfds))
             {
                 throw std::runtime_error("error condition on socket");
             }
-
-            if (FD_ISSET(sockfd, &readfds))
+            else if (FD_ISSET(sockfd, &readfds))
             {
                 boost::scoped_array<char> msg_buffer(
                                                 new char [m_max_message_size]);
@@ -168,7 +175,11 @@ void NodesFinder::SearchAux()
                                0,
                                reinterpret_cast<sockaddr*>(&node_addr),
                                &length);
-                if (ret == 0 || ret > 0)
+                if (ret < 0)
+                {
+                    NotifyAllOnSearchError(ErrorMsg("recvfrom()"));
+                }
+                else
                 {
                     char addr_buffer[MAX_ADDRESS_SIZE] = {0};
                     const char* ret = inet_ntop(AF_INET,
@@ -177,24 +188,15 @@ void NodesFinder::SearchAux()
                                                 MAX_ADDRESS_SIZE);
                     if (ret != 0)
                     {
-                        nodes_just_found.insert(Node(addr_buffer,
-                                                     msg_buffer.get()));
+                        nodes_fnd.insert(Node(addr_buffer, msg_buffer.get()));
                     }
                 }
             }
         }
 
-        std::set_difference(nodes_just_found.begin(),
-                            nodes_just_found.end(),
-                            nodes_all.begin(),
-                            nodes_all.end(),
-                            std::inserter(nodes_diff, nodes_diff.end()));
-        for (int i = 0; i < nodes_diff.size(); ++i)
-        {
-            nodes_all.insert(nodes_diff[i]);
-        }
-
-        NotifyAllOnSearchPushNodes(nodes_diff);
+        std::vector<Node> diff = NotifyAllOnSearchPushNodes(
+                                             Difference(nodes_fnd, nodes_all));
+        nodes_all.insert(diff.begin(), diff.end());
     }
 
     NotifyAllOnSearchFinished();
@@ -224,8 +226,8 @@ void NodesFinder::SetPayload(const char* payload)
 
 unsigned NodesFinder::GetNextRetrySleepInterval() const
 {
-    return rand() % (m_max_retry_interval - m_min_retry_interval + 1) +
-        m_min_retry_interval;
+    unsigned diff = m_max_retry_interval - m_min_retry_interval + 1;
+    return rand() % diff + m_min_retry_interval;
 }
 
 void NodesFinder::NotifyAllOnSearchStarted()
@@ -238,10 +240,12 @@ void NodesFinder::NotifyAllOnSearchFinished()
     Notify(m_listeners, std::mem_fun(&Listener::OnSearchFinished));
 }
 
-void NodesFinder::NotifyAllOnSearchPushNodes(const std::vector<Node>& nodes)
+const std::vector<Node>& NodesFinder::NotifyAllOnSearchPushNodes(
+                                                const std::vector<Node>& nodes)
 {
     Notify(m_listeners,
            std::bind2nd(std::mem_fun(&Listener::OnSearchPushNodes), nodes));
+    return nodes;
 }
 
 std::string NodesFinder::NotifyAllOnSearchError(const std::string& what)

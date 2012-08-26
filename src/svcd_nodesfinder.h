@@ -136,7 +136,7 @@ private:
     unsigned GetNextRetrySleepInterval() const;
     void NotifyAllOnSearchStarted();
     void NotifyAllOnSearchFinished();
-    void NotifyAllOnSearchPushNodes(const std::vector<Node>& nodes);
+    const std::vector<Node>& NotifyAllOnSearchPushNodes(const std::vector<Node>& nodes);
     std::string NotifyAllOnSearchError(const std::string& what);
 };
 
