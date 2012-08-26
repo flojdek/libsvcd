@@ -12,12 +12,18 @@
 #include <algorithm>
 #include <set>
 #include <stdexcept>
+#include <functional>
 
-#define QUOTEME(x) #x
-#define QUOTEME2(x) QUOTEME(x)
-#define THROW(ex, msg) (throw ex(__FILE__ ":" QUOTEME2(__LINE__) ": " msg))
-#define THROW_IF_ERROR(ret, ex, msg) if ((ret) < 0) { THROW(ex, msg); }
-#define THROW_IF_TRUE(ret, ex, msg) if (ret) { THROW(ex, msg); }
+#include <boost/scoped_array.hpp>
+
+namespace
+{
+    template <typename T>
+    void zero(T* x)
+    {
+        memset(x, 0, sizeof(T));
+    }
+}
 
 namespace svcd
 {
@@ -47,9 +53,16 @@ void NodesFinder::Search()
     }
     catch (std::exception& ex)
     {
-        NotifyAllOnSearchError();
+        //NotifyAllOnSearchError();
         throw ex;
     }
+}
+
+std::string NodesFinder::BuildError(const std::string& prefix)
+{
+    std::ostringstream err;
+    err << prefix << " error: " << strerror(errno);
+    return err.str();
 }
 
 void NodesFinder::SearchAux()
@@ -57,18 +70,39 @@ void NodesFinder::SearchAux()
     NotifyAllOnSearchStarted();
 
     int sockfd = socket(AF_INET, SOCK_DGRAM, 0);
-    THROW_IF_ERROR(sockfd, std::runtime_error, "can't create socket");
+    if (sockfd < 0)
+    {
+        /*
+        throw std::runtime_error(NotifyAllOnSearchError(
+                                                       BuildError("socket()")));
+        */
+    }
 
-    const int value = 1; 
-    int ret = setsockopt(sockfd, SOL_SOCKET, SO_BROADCAST, &value, sizeof(value));
-    THROW_IF_ERROR(ret, std::runtime_error, "can't set option SO_BROADCAST on socket");
-    ret = setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &value, sizeof(value));
-    THROW_IF_ERROR(ret, std::runtime_error, "can't set option SO_REUSEADDR on socket");
+    int opt = 1;
+    int ret = setsockopt(sockfd, SOL_SOCKET, SO_BROADCAST, &opt, sizeof(opt));
+    if (ret < 0)
+    {
+        /*
+        std::string err = BuildError("setsockopt(SOL_SOCKET, SO_BROADCAST)");
+        NotifyAllOnSearchError(err);
+        throw std::runtime_error(err);
+        */
+    }
 
-    SA_IN broadcast_addr;
-    memset(&broadcast_addr, 0, sizeof(broadcast_addr));
-    broadcast_addr.sin_family = AF_INET;
-    broadcast_addr.sin_port = htons(m_port);
+    opt = 1;
+    ret = setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+    if (ret < 0)
+    {
+        std::string err = BuildError("setsockopt(SOL_SOCKET, SO_REUSEADDR)");
+        NotifyAllOnSearchError(err);
+        throw std::runtime_error(err);
+    }
+
+    sockaddr_in broadcast_addr;
+    zero(&broadcast_addr);
+
+    broadcast_addr.sin_family      = AF_INET;
+    broadcast_addr.sin_port        = htons(m_port);
     broadcast_addr.sin_addr.s_addr = htonl(INADDR_BROADCAST);
 
     // We'll be pushing difference of nodes_just_found and nodes_all
@@ -84,17 +118,25 @@ void NodesFinder::SearchAux()
         nodes_diff.clear();
 
         if (i > 0)
+        {
             sleep(GetNextRetrySleepInterval());
+        }
 
-        // If sendto will return an error we try again after some time interval.
-
-        int ret = sendto(sockfd, m_payload.data(), m_payload.size(), 0, 
-            reinterpret_cast<SA*>(&broadcast_addr), sizeof(broadcast_addr));
+        int ret = sendto(sockfd,
+                         m_payload.data(),
+                         m_payload.size(),
+                         0,
+                         reinterpret_cast<sockaddr*>(&broadcast_addr),
+                         sizeof(broadcast_addr));
         if (ret < 0)
+        {
             continue;
+        }
 
         timeval tv;
-        tv.tv_sec = m_retry_timeout;
+        zero(&tv);
+
+        tv.tv_sec  = m_retry_timeout;
         tv.tv_usec = 0;
 
         fd_set readfds, errorfds;
@@ -105,11 +147,7 @@ void NodesFinder::SearchAux()
             FD_SET(sockfd, &readfds);
             FD_SET(sockfd, &errorfds);
 
-            // FIXME: select() manual says "Consider timeout to be undefined after select() returns.",
-            // but Linux modifies timeout to reflect the amount of time not slept. Anyway this needs
-            // to be done in a more portable fashion as soon as I'll know how to do it better.
-
-            int ret = select(sockfd + 1, &readfds, 0, &errorfds, &tv);
+            ret = select(sockfd + 1, &readfds, 0, &errorfds, &tv);
             if (ret == 0)
             {
                 break;
@@ -117,31 +155,55 @@ void NodesFinder::SearchAux()
             else if (ret < 0)
             {
                 if (errno == EINTR)
+                {
                     continue;
-
-                THROW_IF_TRUE(errno != EINTR, std::runtime_error, "select error");
+                }
+                else
+                {
+                    throw std::runtime_error(BuildError("select()"));
+                }
             }
 
-            THROW_IF_TRUE(FD_ISSET(sockfd, &errorfds), std::runtime_error, "error condition occured on socket");
+            if (FD_ISSET(sockfd, &errorfds))
+            {
+                throw std::runtime_error("error condition on socket");
+            }
 
             if (FD_ISSET(sockfd, &readfds))
             {
-                SA_IN node_addr;
+                boost::scoped_array<char> msg_buffer(
+                                                new char [m_max_message_size]);
+                zero(msg_buffer.get());
+
+                sockaddr_in node_addr;
+                zero(&node_addr);
+
                 socklen_t length = sizeof(node_addr);
-
-                char* msg_buff = new char [m_max_message_size];
-                memset(msg_buff, 0, m_max_message_size);
-
-                int ret = recvfrom(sockfd, msg_buff, m_max_message_size - 1, 0, 
-                    reinterpret_cast<SA*>(&node_addr), &length);
-                if (ret >= 0)
+                ret = recvfrom(sockfd,
+                               msg_buffer.get(),
+                               m_max_message_size - 1,
+                               0,
+                               reinterpret_cast<sockaddr*>(&node_addr),
+                               &length);
+                if (ret < 0)
                 {
-                    char addr_buff[MAX_ADDRESS_SIZE] = {0};
-                    if (inet_ntop(AF_INET, &node_addr.sin_addr, addr_buff, sizeof(addr_buff)) != 0)
-                        nodes_just_found.insert(Node(addr_buff, msg_buff));
+                    // FIXME: Log warning.
                 }
+                else
+                {
+                    char addr_buffer[MAX_ADDRESS_SIZE];
+                    zero(addr_buffer);
 
-                delete [] msg_buff;
+                    const char* ret = inet_ntop(AF_INET,
+                                                &node_addr.sin_addr,
+                                                addr_buffer,
+                                                MAX_ADDRESS_SIZE);
+                    if (ret != 0)
+                    {
+                        nodes_just_found.insert(Node(addr_buffer,
+                                                     msg_buffer.get()));
+                    }
+                }
             }
         }
 
@@ -161,7 +223,11 @@ void NodesFinder::SearchAux()
 void NodesFinder::ReadConfigFile(const char* path)
 {
     std::ifstream cfg_file_path(path);
-    THROW_IF_TRUE(cfg_file_path.fail(), std::runtime_error, "i/o error with config file");
+    if (cfg_file_path.fail())
+    {
+        throw std::runtime_error("error reading config file");
+    }
+
     po::variables_map vm;
     po::store(po::parse_config_file(cfg_file_path, m_opts_desc), vm);
     po::notify(vm);
@@ -170,43 +236,46 @@ void NodesFinder::ReadConfigFile(const char* path)
 void NodesFinder::SetPayload(const char* payload)
 {
     if (strlen(payload) > m_max_message_size)
-        THROW(std::length_error, "payload length exceeds maximum allowable size");	
-
+    {
+        throw std::length_error("payload length exceeds maximum allowable size");
+    }
     m_payload = payload;
 }
 
 unsigned NodesFinder::GetNextRetrySleepInterval() const
 {
-    return rand() % (m_max_retry_interval - m_min_retry_interval + 1) + 
+    return rand() % (m_max_retry_interval - m_min_retry_interval + 1) +
         m_min_retry_interval;
 }
 
 void NodesFinder::NotifyAllOnSearchStarted()
 {
-    std::list<Listener*>::iterator it;
-    for (it = m_listeners.begin(); it != m_listeners.end(); ++it)
-        (*it)->OnSearchStarted();
+    std::for_each(m_listeners.begin(),
+                  m_listeners.end(),
+                  std::mem_fun(&Listener::OnSearchStarted));
 }
 
 void NodesFinder::NotifyAllOnSearchFinished()
 {
-    std::list<Listener*>::iterator it;
-    for (it = m_listeners.begin(); it != m_listeners.end(); ++it)
-        (*it)->OnSearchFinished();
+    std::for_each(m_listeners.begin(),
+                  m_listeners.end(),
+                  std::mem_fun(&Listener::OnSearchFinished));
 }
 
 void NodesFinder::NotifyAllOnSearchPushNodes(const std::vector<Node>& nodes)
 {
-    std::list<Listener*>::iterator it;
-    for (it = m_listeners.begin(); it != m_listeners.end(); ++it)
-        (*it)->OnSearchPushNodes(nodes);
+    std::for_each(m_listeners.begin(),
+                  m_listeners.end(),
+                  std::bind2nd(std::mem_fun(&Listener::OnSearchPushNodes),
+                               nodes));
 }
 
-void NodesFinder::NotifyAllOnSearchError()
+void NodesFinder::NotifyAllOnSearchError(const std::string& what)
 {
-    std::list<Listener*>::iterator it;
-    for (it = m_listeners.begin(); it != m_listeners.end(); ++it)
-        (*it)->OnSearchError();
+    std::for_each(m_listeners.begin(),
+                  m_listeners.end(),
+                  std::bind2nd(std::mem_fun(&Listener::OnSearchError),
+                               what));
 }
 
 }

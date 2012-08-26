@@ -29,10 +29,6 @@ namespace po = boost::program_options;
 class NodesFinder
 {
 public:
-
-    typedef sockaddr SA;
-    typedef sockaddr_in SA_IN;
-
     struct Listener
     {
         /**
@@ -56,7 +52,7 @@ public:
          * Called when there's a for example system call error,
          * out of memory error etc.
          */
-        virtual void OnSearchError() = 0;
+        virtual void OnSearchError(const std::string& what) = 0;
     };
 
     NodesFinder();
@@ -135,11 +131,13 @@ private:
      */
     void SearchAux();
 
+    std::string BuildError(const std::string& prefix);
+
     unsigned GetNextRetrySleepInterval() const;
     void NotifyAllOnSearchStarted();
     void NotifyAllOnSearchFinished();
     void NotifyAllOnSearchPushNodes(const std::vector<Node>& nodes);
-    void NotifyAllOnSearchError();
+    void NotifyAllOnSearchError(const std::string& what);
 };
 
 }
